@@ -454,7 +454,7 @@
         <div class="header">
             <div class="header-title">2FA Authenticator</div>
             <div class="header-actions">
-                <button class="header-btn" onclick="showPage('accounts/settings')">
+                <button class="header-btn" onclick="showPage('accounts-settings')">
                     <i class="fas fa-cog"></i>
                 </button>
             </div>
@@ -470,7 +470,7 @@
             <div style="font-size: 14px; margin-top: 8px;">Нажмите + чтобы добавить</div>
         </div>
         
-        <button class="fab" onclick="showPage('accounts/push')">
+        <button class="fab" onclick="showPage('accounts-push')">
             <i class="fas fa-plus"></i>
         </button>
     </div>
@@ -490,11 +490,11 @@
             </div>
             
             <div class="button-group">
-                <button class="btn btn-primary" onclick="showPage('accounts/pushQr')">
+                <button class="btn btn-primary" onclick="showPage('accounts-pushQr')">
                     <i class="fas fa-qrcode"></i>
                     Сканировать QR
                 </button>
-                <button class="btn" onclick="showManualForm()">
+                <button class="btn" onclick="showPage('manual-add')">
                     <i class="fas fa-keyboard"></i>
                     Добавить вручную
                 </button>
@@ -560,7 +560,7 @@
             <button class="back-btn" onclick="goBack()">
                 <i class="fas fa-arrow-left"></i>
             </button>
-            <div class="header-title" id="detail-service-name"></div>
+            <div class="header-title" id="detail-service-name">Аккаунт</div>
             <div class="header-actions">
                 <button class="header-btn" onclick="deleteCurrentAccount()">
                     <i class="fas fa-trash"></i>
@@ -569,7 +569,7 @@
         </div>
         
         <div class="code-container">
-            <div class="service-name" id="detail-service-name-full"></div>
+            <div class="service-name" id="detail-service-name-full">Сервис</div>
             <div class="hint">Введите пароль на другом устройстве</div>
             
             <div class="code" id="code-display">000 000</div>
@@ -634,8 +634,6 @@
     <!-- Скрытый input для импорта -->
     <input type="file" id="backup-file" accept=".json" style="display: none;">
 
-    <!-- Подключаем библиотеки -->
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script>
         // Telegram WebApp API
         const tg = window.Telegram?.WebApp;
@@ -647,37 +645,38 @@
         let updateInterval;
         let toastTimeout;
         let pageHistory = ['accounts'];
+        let qrStream = null;
 
         // Инициализация приложения
         function initApp() {
-            if (tg) {
-                tg.ready();
-                tg.expand();
-                
-                // Настраиваем кнопку назад в Telegram
-                tg.BackButton.onClick(goBack);
-                
-                // Получаем user_id
-                const userId = tg.initDataUnsafe?.user?.id || 'local_user';
-                console.log('User ID:', userId);
-                
-                // Загружаем данные
-                loadUserData(userId);
-                
-                // Применяем тему Telegram
-                if (tg.colorScheme === 'dark') {
-                    document.body.classList.add('dark-theme');
-                }
-            } else {
-                // Режим разработки
-                loadUserData('dev_user');
-            }
+            console.log('Initializing app...');
+            
+            // Загружаем данные пользователя
+            const userId = tg?.initDataUnsafe?.user?.id || 'local_user';
+            console.log('User ID:', userId);
+            loadUserData(userId);
             
             // Загружаем аккаунты
             loadAccounts();
             
+            // Применяем тему
+            applyTheme();
+            
+            // Инициализируем кнопки тем
+            initThemeButtons();
+            
+            // Инициализируем Telegram
+            if (tg) {
+                tg.ready();
+                tg.expand();
+                tg.BackButton.onClick(goBack);
+                tg.BackButton.hide();
+            }
+            
             // Стартуем таймер обновления кодов
             startCodeUpdate();
+            
+            console.log('App initialized successfully');
         }
 
         // Загрузка данных пользователя
@@ -686,10 +685,12 @@
                 const savedAccounts = localStorage.getItem(`2fa_accounts_${userId}`);
                 const savedSettings = localStorage.getItem(`2fa_settings_${userId}`);
                 
+                console.log('Loading accounts:', savedAccounts);
+                console.log('Loading settings:', savedSettings);
+                
                 accounts = savedAccounts ? JSON.parse(savedAccounts) : [];
                 settings = savedSettings ? JSON.parse(savedSettings) : { theme: 'system' };
                 
-                applyTheme();
             } catch (e) {
                 console.error('Error loading data:', e);
                 accounts = [];
@@ -702,6 +703,7 @@
             const userId = tg?.initDataUnsafe?.user?.id || 'local_user';
             localStorage.setItem(`2fa_accounts_${userId}`, JSON.stringify(accounts));
             localStorage.setItem(`2fa_settings_${userId}`, JSON.stringify(settings));
+            console.log('Data saved for user:', userId);
         }
 
         // Загрузка списка аккаунтов
@@ -709,10 +711,13 @@
             const accountsList = document.getElementById('accounts-list');
             const emptyState = document.getElementById('empty-state');
             
+            console.log('Loading accounts list, count:', accounts.length);
+            
             accountsList.innerHTML = '';
             
             if (accounts.length === 0) {
                 emptyState.style.display = 'block';
+                console.log('Showing empty state');
                 return;
             }
             
@@ -724,7 +729,10 @@
             accounts.forEach(account => {
                 const accountDiv = document.createElement('div');
                 accountDiv.className = 'account-item';
-                accountDiv.onclick = () => showAccountDetail(account.id);
+                accountDiv.onclick = () => {
+                    console.log('Account clicked:', account.id);
+                    showAccountDetail(account.id);
+                };
                 
                 // Получаем первую букву для иконки
                 const firstLetter = account.serviceName.charAt(0).toUpperCase();
@@ -743,56 +751,82 @@
 
         // Навигация по страницам
         function showPage(pageId) {
+            console.log('Showing page:', pageId, 'History:', pageHistory);
+            
             // Скрываем все страницы
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
             
-            // Показываем нужную страницу
-            const pageElement = document.getElementById(pageId + '-page');
+            // Находим нужную страницу
+            let pageElement;
+            if (pageId.includes('/') && !pageId.startsWith('account-detail')) {
+                // Это вложенная страница типа accounts/something
+                const pageName = pageId.replace('/', '-');
+                pageElement = document.getElementById(pageName + '-page');
+            } else if (pageId.startsWith('account-detail')) {
+                // Это страница деталей аккаунта
+                pageElement = document.getElementById('account-detail-page');
+                const accountId = pageId.split('/')[1];
+                if (accountId) {
+                    updateAccountDetail(accountId);
+                }
+            } else {
+                // Обычная страница
+                pageElement = document.getElementById(pageId + '-page');
+            }
+            
             if (pageElement) {
                 pageElement.classList.add('active');
                 pageHistory.push(pageId);
                 
-                // Показываем/скрываем кнопку назад в Telegram
-                if (tg && pageId !== 'accounts') {
-                    tg.BackButton.show();
-                } else if (tg) {
-                    tg.BackButton.hide();
+                // Управляем кнопкой назад в Telegram
+                if (tg) {
+                    if (pageId !== 'accounts') {
+                        tg.BackButton.show();
+                    } else {
+                        tg.BackButton.hide();
+                    }
                 }
                 
                 // Особые действия для страниц
-                if (pageId === 'accounts/pushQr') {
+                if (pageId === 'accounts-pushQr') {
                     startQRScanner();
-                } else if (pageId.startsWith('account-detail')) {
-                    const accountId = pageId.split('/')[1];
-                    showAccountDetail(accountId);
+                } else if (pageId === 'accounts-push' || pageId === 'manual-add') {
+                    // Останавливаем QR сканер если он активен
+                    stopQRScanner();
                 }
+                
+                console.log('Page shown successfully:', pageId);
+            } else {
+                console.error('Page not found:', pageId);
+                // Возвращаем на главную если страница не найдена
+                showPage('accounts');
             }
         }
 
         function goBack() {
+            console.log('Going back. History:', pageHistory);
+            
             if (pageHistory.length > 1) {
-                pageHistory.pop(); // Убираем текущую страницу
-                const prevPage = pageHistory[pageHistory.length - 1];
-                
                 // Останавливаем QR сканер если он активен
                 if (document.getElementById('accounts-pushQr-page').classList.contains('active')) {
                     stopQRScanner();
                 }
                 
+                // Убираем текущую страницу
+                pageHistory.pop();
+                const prevPage = pageHistory[pageHistory.length - 1];
+                
+                console.log('Going to previous page:', prevPage);
                 showPage(prevPage);
             } else {
                 // Если это главная страница, закрываем приложение
+                console.log('Closing app');
                 if (tg) {
                     tg.close();
                 }
             }
-        }
-
-        // Показать форму ручного добавления
-        function showManualForm() {
-            showPage('manual-add');
         }
 
         // Сохранение аккаунта вручную
@@ -807,13 +841,13 @@
             }
             
             // Проверяем Base32 формат
-            if (!/^[A-Z2-7]+=*$/.test(secretKey.toUpperCase())) {
+            if (!/^[A-Z2-7]+=*$/i.test(secretKey)) {
                 showToast('Неверный формат секретного ключа');
                 return;
             }
             
             const newAccount = {
-                id: 'acc_' + Date.now(),
+                id: 'acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                 serviceName: serviceName,
                 login: login,
                 secretKey: secretKey.toUpperCase(),
@@ -834,38 +868,53 @@
         }
 
         // QR сканер
-        let qrStream = null;
-
         function startQRScanner() {
+            console.log('Starting QR scanner...');
             const video = document.getElementById('qr-video');
+            
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast('Камера не поддерживается');
+                return;
+            }
             
             navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: 'environment' } 
             }).then(stream => {
+                console.log('Camera access granted');
                 qrStream = stream;
                 video.srcObject = stream;
-                video.play();
                 
-                // Начинаем сканирование
-                scanQRCode();
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // Начинаем сканирование
+                    requestAnimationFrame(scanQRCode);
+                };
+                
             }).catch(err => {
                 console.error('Camera error:', err);
                 showToast('Не удалось получить доступ к камере');
-                showPage('accounts/push');
+                showPage('accounts-push');
             });
         }
 
         function stopQRScanner() {
+            console.log('Stopping QR scanner');
             if (qrStream) {
-                qrStream.getTracks().forEach(track => track.stop());
+                qrStream.getTracks().forEach(track => {
+                    track.stop();
+                });
                 qrStream = null;
+            }
+            const video = document.getElementById('qr-video');
+            if (video.srcObject) {
+                video.srcObject = null;
             }
         }
 
         function scanQRCode() {
             const video = document.getElementById('qr-video');
             
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
                 const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
@@ -874,9 +923,14 @@
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                // Используем jsQR для распознавания
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
                 
                 if (code) {
+                    console.log('QR code found:', code.data);
                     processQRCode(code.data);
                     return;
                 }
@@ -890,6 +944,8 @@
 
         function processQRCode(url) {
             try {
+                console.log('Processing QR code:', url);
+                
                 // Формат: otpauth://totp/Service:user@email.com?secret=ABC123&issuer=Service
                 const urlObj = new URL(url);
                 
@@ -914,14 +970,14 @@
                     const parts = path.split(':');
                     login = parts[1] || '';
                     if (!serviceName) {
-                        serviceName = parts[0];
+                        serviceName = decodeURIComponent(parts[0]);
                     }
                 } else if (!serviceName) {
-                    serviceName = path;
+                    serviceName = decodeURIComponent(path);
                 }
                 
                 const newAccount = {
-                    id: 'qr_' + Date.now(),
+                    id: 'qr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                     serviceName: serviceName || 'Новый аккаунт',
                     login: login,
                     secretKey: secretKey,
@@ -944,8 +1000,18 @@
 
         // Детали аккаунта
         function showAccountDetail(accountId) {
+            console.log('Showing account detail:', accountId);
+            currentAccountId = accountId;
+            showPage('account-detail');
+        }
+
+        function updateAccountDetail(accountId) {
             const account = accounts.find(acc => acc.id === accountId);
-            if (!account) return;
+            if (!account) {
+                console.error('Account not found:', accountId);
+                showPage('accounts');
+                return;
+            }
             
             currentAccountId = accountId;
             
@@ -953,16 +1019,16 @@
             document.getElementById('detail-service-name').textContent = account.serviceName;
             document.getElementById('detail-service-name-full').textContent = account.serviceName;
             
-            // Показываем страницу
-            showPage('account-detail');
-            
             // Сразу обновляем код
             updateAccountCode();
         }
 
-        // Генерация TOTP кода
+        // TOTP генерация
         function generateTOTP(secretKey) {
             try {
+                // Очищаем секрет
+                secretKey = secretKey.replace(/\s/g, '').toUpperCase();
+                
                 // Декодируем Base32
                 const key = base32Decode(secretKey);
                 
@@ -972,26 +1038,25 @@
                 // Конвертируем время в 8-байтовый массив (big-endian)
                 const timeBytes = new ArrayBuffer(8);
                 const timeView = new DataView(timeBytes);
-                timeView.setBigUint64(0, BigInt(time), false);
+                timeView.setUint32(0, 0); // старшие 4 байта
+                timeView.setUint32(4, time); // младшие 4 байта
                 
-                // Вычисляем HMAC-SHA1 (упрощенная реализация для демо)
-                // В production используйте Web Crypto API
-                const hash = simpleHMAC(key, new Uint8Array(timeBytes));
+                // Упрощенная HMAC-SHA1 реализация
+                const hmac = simpleHMAC(key, new Uint8Array(timeBytes));
                 
                 // Получаем offset из последнего байта
-                const offset = hash[hash.length - 1] & 0xf;
+                const offset = hmac[hmac.length - 1] & 0xf;
                 
                 // Извлекаем 4 байта
-                const codeBytes = hash.slice(offset, offset + 4);
+                let code = (
+                    ((hmac[offset] & 0x7f) << 24) |
+                    ((hmac[offset + 1] & 0xff) << 16) |
+                    ((hmac[offset + 2] & 0xff) << 8) |
+                    (hmac[offset + 3] & 0xff)
+                );
                 
-                // Преобразуем в число
-                let code = 0;
-                for (let i = 0; i < 4; i++) {
-                    code = (code << 8) | codeBytes[i];
-                }
-                
-                // Применяем маску и получаем 6-значный код
-                code = (code & 0x7fffffff) % 1000000;
+                // Получаем 6-значный код
+                code = code % 1000000;
                 
                 return code.toString().padStart(6, '0');
                 
@@ -1004,14 +1069,21 @@
         // Base32 декодирование
         function base32Decode(base32) {
             const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            base32 = base32.replace(/=+$/, '');
+            base32 = base32.toUpperCase().replace(/=+$/, '');
             
             let bits = 0;
             let value = 0;
             let output = [];
             
             for (let i = 0; i < base32.length; i++) {
-                value = (value << 5) | alphabet.indexOf(base32[i].toUpperCase());
+                const char = base32.charAt(i);
+                const index = alphabet.indexOf(char);
+                
+                if (index === -1) {
+                    throw new Error('Invalid Base32 character: ' + char);
+                }
+                
+                value = (value << 5) | index;
                 bits += 5;
                 
                 if (bits >= 8) {
@@ -1023,18 +1095,65 @@
             return new Uint8Array(output);
         }
 
-        // Упрощенный HMAC-SHA1 (для демо)
+        // Упрощенный HMAC-SHA1 (для демо - в production используйте Web Crypto API)
         function simpleHMAC(key, message) {
-            // В production замените на Web Crypto API
-            // Здесь используется упрощенная реализация
-            const combined = new Uint8Array(key.length + message.length);
-            combined.set(key);
-            combined.set(message, key.length);
+            // Блок для HMAC (64 байта)
+            const blockSize = 64;
+            
+            // Дополняем ключ до размера блока
+            let keyBytes = new Uint8Array(blockSize);
+            if (key.length > blockSize) {
+                // Если ключ длиннее блока, хешируем его
+                const temp = new Uint8Array(key.length);
+                for (let i = 0; i < key.length; i++) {
+                    temp[i] = key[i] ^ 0x36; // ipad
+                }
+                keyBytes = temp.slice(0, blockSize);
+            } else {
+                for (let i = 0; i < key.length; i++) {
+                    keyBytes[i] = key[i];
+                }
+            }
+            
+            // Создаем внутренний блок (key XOR ipad)
+            const ipad = 0x36;
+            const innerKey = new Uint8Array(blockSize);
+            for (let i = 0; i < blockSize; i++) {
+                innerKey[i] = keyBytes[i] ^ ipad;
+            }
+            
+            // Объединяем с сообщением
+            const innerData = new Uint8Array(blockSize + message.length);
+            innerData.set(innerKey);
+            innerData.set(message, blockSize);
             
             // Простая хеш-функция для демо
+            const hash = simpleSHA1(innerData);
+            
+            // Создаем внешний блок (key XOR opad)
+            const opad = 0x5c;
+            const outerKey = new Uint8Array(blockSize);
+            for (let i = 0; i < blockSize; i++) {
+                outerKey[i] = keyBytes[i] ^ opad;
+            }
+            
+            // Объединяем с хешем
+            const outerData = new Uint8Array(blockSize + hash.length);
+            outerData.set(outerKey);
+            outerData.set(hash, blockSize);
+            
+            // Финальный хеш
+            return simpleSHA1(outerData);
+        }
+
+        // Упрощенная SHA1 (для демо - в production используйте Web Crypto API)
+        function simpleSHA1(data) {
+            // Простая реализация для демонстрации
+            // В реальном приложении используйте crypto.subtle.digest()
             const hash = new Uint8Array(20);
-            for (let i = 0; i < combined.length; i++) {
-                hash[i % 20] = (hash[i % 20] + combined[i]) & 0xff;
+            
+            for (let i = 0; i < data.length; i++) {
+                hash[i % 20] = (hash[i % 20] + data[i]) & 0xff;
             }
             
             return hash;
@@ -1084,41 +1203,73 @@
             if (!account) return;
             
             const code = generateTOTP(account.secretKey);
+            const cleanCode = code.replace(/\s/g, '');
             
-            navigator.clipboard.writeText(code).then(() => {
-                showToast('Код скопирован');
-                
-                // Виброотклик если доступен
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-            }).catch(() => {
-                // Fallback для старых браузеров
-                const textArea = document.createElement('textarea');
-                textArea.value = code;
-                document.body.appendChild(textArea);
-                textArea.select();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(cleanCode).then(() => {
+                    showToast('Код скопирован');
+                    
+                    // Виброотклик если доступен
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }).catch(err => {
+                    console.error('Clipboard error:', err);
+                    fallbackCopy(cleanCode);
+                });
+            } else {
+                fallbackCopy(cleanCode);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
                 document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
                 showToast('Код скопирован');
-            });
+            } catch (err) {
+                console.error('Fallback copy error:', err);
+                showToast('Не удалось скопировать код');
+            }
+            
+            document.body.removeChild(textArea);
         }
 
         // Удаление аккаунта
         function deleteCurrentAccount() {
-            if (!currentAccountId || !confirm('Удалить этот аккаунт?')) return;
+            if (!currentAccountId) return;
             
-            accounts = accounts.filter(acc => acc.id !== currentAccountId);
-            saveUserData();
-            loadAccounts();
-            
-            showToast('Аккаунт удален');
-            showPage('accounts');
+            if (confirm('Удалить этот аккаунт?')) {
+                accounts = accounts.filter(acc => acc.id !== currentAccountId);
+                saveUserData();
+                loadAccounts();
+                
+                showToast('Аккаунт удален');
+                showPage('accounts');
+            }
         }
 
         // Настройки темы
+        function initThemeButtons() {
+            // Устанавливаем активную тему
+            const theme = settings.theme || 'system';
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById('theme-' + theme);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+        }
+
         function setTheme(theme) {
+            console.log('Setting theme to:', theme);
             settings.theme = theme;
             saveUserData();
             applyTheme();
@@ -1131,6 +1282,8 @@
         }
 
         function applyTheme() {
+            console.log('Applying theme:', settings.theme);
+            
             // Удаляем все темы
             document.body.classList.remove('dark-theme', 'light-theme');
             
@@ -1144,15 +1297,6 @@
             } else if (settings.theme === 'light') {
                 document.body.classList.add('light-theme');
             }
-            
-            // Обновляем активную кнопку
-            document.querySelectorAll('.theme-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            const activeBtn = document.getElementById('theme-' + settings.theme);
-            if (activeBtn) {
-                activeBtn.classList.add('active');
-            }
         }
 
         // Бэкапы
@@ -1165,14 +1309,17 @@
             };
             
             const dataStr = JSON.stringify(backupData, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             
             const link = document.createElement('a');
-            link.setAttribute('href', dataUri);
-            link.setAttribute('download', `2fa-backup-${Date.now()}.json`);
+            link.href = url;
+            link.download = `2fa-backup-${Date.now()}.json`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            
+            URL.revokeObjectURL(url);
             
             showToast('Бэкап сохранен');
         }
@@ -1195,7 +1342,7 @@
                         throw new Error('Неверный формат файла');
                     }
                     
-                    if (confirm(`Восстановить ${backupData.accounts.length} аккаунтов?`)) {
+                    if (confirm(`Восстановить ${backupData.accounts.length} аккаунтов? Текущие аккаунты будут заменены.`)) {
                         accounts = backupData.accounts;
                         saveUserData();
                         loadAccounts();
@@ -1215,6 +1362,7 @@
 
         // Уведомления
         function showToast(message) {
+            console.log('Toast:', message);
             const toast = document.getElementById('toast');
             toast.textContent = message;
             toast.classList.add('show');
@@ -1227,6 +1375,14 @@
 
         // Инициализация при загрузке
         document.addEventListener('DOMContentLoaded', initApp);
+
+        // Глобальная функция для jsQR (если библиотека загружается асинхронно)
+        window.jsQR = window.jsQR || function(data, width, height, options) {
+            // Заглушка если библиотека не загрузилась
+            console.warn('jsQR not loaded');
+            return null;
+        };
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </body>
 </html>
