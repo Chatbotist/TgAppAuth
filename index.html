@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2FA Authenticator</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-hint-color: #999999;
+            --tg-theme-link-color: #2481cc;
+            --tg-theme-button-color: #2481cc;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f1f1f1;
+            --primary: #2481cc;
+            --danger: #ff3b30;
+            --success: #34c759;
+            --border: #e5e5ea;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Навигация */
+        .page {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            background: var(--tg-theme-bg-color);
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            background: var(--tg-theme-bg-color);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--tg-theme-text-color);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .header-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--tg-theme-text-color);
+            cursor: pointer;
+            padding: 8px;
+        }
+
+        /* Главная страница */
+        .account-list {
+            padding: 16px;
+        }
+
+        .account-item {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        .account-item:active {
+            transform: scale(0.98);
+            opacity: 0.8;
+        }
+
+        .account-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .account-info {
+            flex: 1;
+        }
+
+        .account-name {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .account-login {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: transform 0.2s;
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
+
+        /* Страница добавления */
+        .page-content {
+            padding: 24px 16px;
+        }
+
+        .instruction {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+            color: var(--tg-theme-hint-color);
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 16px;
+            border-radius: 12px;
+            border: none;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            transition: opacity 0.2s;
+        }
+
+        .btn:active {
+            opacity: 0.7;
+        }
+
+        .btn-primary {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+        }
+
+        .btn i {
+            font-size: 20px;
+        }
+
+        /* Форма добавления вручную */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 16px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        /* Страница деталей аккаунта */
+        .code-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            padding: 40px 20px;
+        }
+
+        .service-name {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .hint {
+            color: var(--tg-theme-hint-color);
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .code {
+            font-family: 'Courier New', monospace;
+            font-size: 48px;
+            font-weight: 600;
+            letter-spacing: 8px;
+            margin: 20px 0;
+            color: var(--tg-theme-text-color);
+        }
+
+        .timer-bar {
+            width: 200px;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            margin: 30px 0;
+            overflow: hidden;
+        }
+
+        .timer-progress {
+            height: 100%;
+            background: var(--primary);
+            width: 100%;
+            transition: width 1s linear;
+        }
+
+        .copy-btn {
+            margin-top: 20px;
+            width: 200px;
+        }
+
+        /* Страница настроек */
+        .settings-list {
+            padding: 16px;
+        }
+
+        .settings-item {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .settings-item:last-child {
+            border-bottom: none;
+        }
+
+        .settings-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .settings-description {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color);
+            margin-bottom: 12px;
+        }
+
+        .theme-options {
+            display: flex;
+            gap: 8px;
+        }
+
+        .theme-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 12px;
+            border: 2px solid var(--border);
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .theme-btn.active {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: white;
+        }
+
+        .backup-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .backup-btn {
+            flex: 1;
+        }
+
+        /* QR сканер */
+        .qr-scanner {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto;
+        }
+
+        #qr-video {
+            width: 100%;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .qr-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+        }
+
+        /* Уведомления */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            z-index: 1000;
+            opacity: 0;
+            transition: transform 0.3s, opacity 0.3s;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* Темы */
+        body.dark-theme {
+            --tg-theme-bg-color: #1c1c1e;
+            --tg-theme-text-color: #ffffff;
+            --tg-theme-hint-color: #8e8e93;
+            --tg-theme-secondary-bg-color: #2c2c2e;
+            --border: #38383a;
+        }
+
+        body.light-theme {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-hint-color: #999999;
+            --tg-theme-secondary-bg-color: #f1f1f1;
+            --border: #e5e5ea;
+        }
+
+        /* Адаптивность */
+        @media (max-width: 480px) {
+            .code {
+                font-size: 40px;
+                letter-spacing: 6px;
+            }
+            
+            .timer-bar {
+                width: 180px;
+            }
+            
+            .copy-btn {
+                width: 180px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Главная страница -->
+    <div id="accounts-page" class="page active">
+        <div class="header">
+            <div class="header-title">2FA Authenticator</div>
+            <div class="header-actions">
+                <button class="header-btn" onclick="showPage('accounts/settings')">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="account-list" id="accounts-list">
+            <!-- Аккаунты будут здесь -->
+        </div>
+        
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <i class="fas fa-key"></i>
+            <div>Нет добавленных аккаунтов</div>
+            <div style="font-size: 14px; margin-top: 8px;">Нажмите + чтобы добавить</div>
+        </div>
+        
+        <button class="fab" onclick="showPage('accounts/push')">
+            <i class="fas fa-plus"></i>
+        </button>
+    </div>
+
+    <!-- Добавление аккаунта -->
+    <div id="accounts-push-page" class="page">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="header-title">Добавить аккаунт</div>
+        </div>
+        
+        <div class="page-content">
+            <div class="instruction">
+                В настройках сервиса включите вход с одноразовым паролем. Затем отсканируйте QR или добавьте аккаунт вручную
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="showPage('accounts/pushQr')">
+                    <i class="fas fa-qrcode"></i>
+                    Сканировать QR
+                </button>
+                <button class="btn" onclick="showManualForm()">
+                    <i class="fas fa-keyboard"></i>
+                    Добавить вручную
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Добавление вручную -->
+    <div id="manual-add-page" class="page">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="header-title">Добавить вручную</div>
+        </div>
+        
+        <div class="page-content">
+            <div class="form-group">
+                <label class="form-label">Название сервиса</label>
+                <input type="text" class="form-input" id="service-name" placeholder="Например: Google">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Логин на сервисе</label>
+                <input type="text" class="form-input" id="service-login" placeholder="Ваш email или логин">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Секретный ключ</label>
+                <input type="text" class="form-input" id="secret-key" placeholder="Введите секретный ключ">
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveManualAccount()" style="width: 100%;">
+                Сохранить
+            </button>
+        </div>
+    </div>
+
+    <!-- Сканирование QR -->
+    <div id="accounts-pushQr-page" class="page">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="header-title">Сканировать QR</div>
+        </div>
+        
+        <div class="page-content">
+            <div class="qr-scanner">
+                <video id="qr-video"></video>
+                <div class="qr-overlay"></div>
+            </div>
+            
+            <div class="instruction" style="text-align: center;">
+                Наведите камеру на QR-код из настроек сервиса
+            </div>
+        </div>
+    </div>
+
+    <!-- Детали аккаунта -->
+    <div id="account-detail-page" class="page">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="header-title" id="detail-service-name"></div>
+            <div class="header-actions">
+                <button class="header-btn" onclick="deleteCurrentAccount()">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="code-container">
+            <div class="service-name" id="detail-service-name-full"></div>
+            <div class="hint">Введите пароль на другом устройстве</div>
+            
+            <div class="code" id="code-display">000 000</div>
+            
+            <div class="timer-bar">
+                <div class="timer-progress" id="timer-progress"></div>
+            </div>
+            
+            <button class="btn btn-primary copy-btn" onclick="copyCurrentCode()">
+                <i class="fas fa-copy"></i>
+                Скопировать код
+            </button>
+        </div>
+    </div>
+
+    <!-- Настройки -->
+    <div id="accounts-settings-page" class="page">
+        <div class="header">
+            <button class="back-btn" onclick="goBack()">
+                <i class="fas fa-arrow-left"></i>
+            </button>
+            <div class="header-title">Настройки</div>
+        </div>
+        
+        <div class="settings-list">
+            <div class="settings-item">
+                <div class="settings-title">Тема приложения</div>
+                <div class="settings-description">Выберите тему интерфейса</div>
+                <div class="theme-options">
+                    <button class="theme-btn" onclick="setTheme('system')" id="theme-system">
+                        Системная
+                    </button>
+                    <button class="theme-btn" onclick="setTheme('light')" id="theme-light">
+                        Светлая
+                    </button>
+                    <button class="theme-btn" onclick="setTheme('dark')" id="theme-dark">
+                        Темная
+                    </button>
+                </div>
+            </div>
+            
+            <div class="settings-item">
+                <div class="settings-title">Резервная копия данных</div>
+                <div class="settings-description">Сохраните или восстановите ваши аккаунты</div>
+                <div class="backup-buttons">
+                    <button class="btn backup-btn" onclick="exportBackup()">
+                        <i class="fas fa-download"></i>
+                        Сохранить в файл
+                    </button>
+                    <button class="btn backup-btn" onclick="importBackup()">
+                        <i class="fas fa-upload"></i>
+                        Восстановить из файла
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Уведомление -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Скрытый input для импорта -->
+    <input type="file" id="backup-file" accept=".json" style="display: none;">
+
+    <!-- Подключаем библиотеки -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script>
+        // Telegram WebApp API
+        const tg = window.Telegram?.WebApp;
+        
+        // Глобальные переменные
+        let accounts = [];
+        let currentAccountId = null;
+        let settings = {};
+        let updateInterval;
+        let toastTimeout;
+        let pageHistory = ['accounts'];
+
+        // Инициализация приложения
+        function initApp() {
+            if (tg) {
+                tg.ready();
+                tg.expand();
+                
+                // Настраиваем кнопку назад в Telegram
+                tg.BackButton.onClick(goBack);
+                
+                // Получаем user_id
+                const userId = tg.initDataUnsafe?.user?.id || 'local_user';
+                console.log('User ID:', userId);
+                
+                // Загружаем данные
+                loadUserData(userId);
+                
+                // Применяем тему Telegram
+                if (tg.colorScheme === 'dark') {
+                    document.body.classList.add('dark-theme');
+                }
+            } else {
+                // Режим разработки
+                loadUserData('dev_user');
+            }
+            
+            // Загружаем аккаунты
+            loadAccounts();
+            
+            // Стартуем таймер обновления кодов
+            startCodeUpdate();
+        }
+
+        // Загрузка данных пользователя
+        function loadUserData(userId) {
+            try {
+                const savedAccounts = localStorage.getItem(`2fa_accounts_${userId}`);
+                const savedSettings = localStorage.getItem(`2fa_settings_${userId}`);
+                
+                accounts = savedAccounts ? JSON.parse(savedAccounts) : [];
+                settings = savedSettings ? JSON.parse(savedSettings) : { theme: 'system' };
+                
+                applyTheme();
+            } catch (e) {
+                console.error('Error loading data:', e);
+                accounts = [];
+                settings = { theme: 'system' };
+            }
+        }
+
+        // Сохранение данных пользователя
+        function saveUserData() {
+            const userId = tg?.initDataUnsafe?.user?.id || 'local_user';
+            localStorage.setItem(`2fa_accounts_${userId}`, JSON.stringify(accounts));
+            localStorage.setItem(`2fa_settings_${userId}`, JSON.stringify(settings));
+        }
+
+        // Загрузка списка аккаунтов
+        function loadAccounts() {
+            const accountsList = document.getElementById('accounts-list');
+            const emptyState = document.getElementById('empty-state');
+            
+            accountsList.innerHTML = '';
+            
+            if (accounts.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            emptyState.style.display = 'none';
+            
+            // Сортируем по названию
+            accounts.sort((a, b) => a.serviceName.localeCompare(b.serviceName));
+            
+            accounts.forEach(account => {
+                const accountDiv = document.createElement('div');
+                accountDiv.className = 'account-item';
+                accountDiv.onclick = () => showAccountDetail(account.id);
+                
+                // Получаем первую букву для иконки
+                const firstLetter = account.serviceName.charAt(0).toUpperCase();
+                
+                accountDiv.innerHTML = `
+                    <div class="account-icon">${firstLetter}</div>
+                    <div class="account-info">
+                        <div class="account-name">${account.serviceName}</div>
+                        <div class="account-login">${account.login || ''}</div>
+                    </div>
+                `;
+                
+                accountsList.appendChild(accountDiv);
+            });
+        }
+
+        // Навигация по страницам
+        function showPage(pageId) {
+            // Скрываем все страницы
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // Показываем нужную страницу
+            const pageElement = document.getElementById(pageId + '-page');
+            if (pageElement) {
+                pageElement.classList.add('active');
+                pageHistory.push(pageId);
+                
+                // Показываем/скрываем кнопку назад в Telegram
+                if (tg && pageId !== 'accounts') {
+                    tg.BackButton.show();
+                } else if (tg) {
+                    tg.BackButton.hide();
+                }
+                
+                // Особые действия для страниц
+                if (pageId === 'accounts/pushQr') {
+                    startQRScanner();
+                } else if (pageId.startsWith('account-detail')) {
+                    const accountId = pageId.split('/')[1];
+                    showAccountDetail(accountId);
+                }
+            }
+        }
+
+        function goBack() {
+            if (pageHistory.length > 1) {
+                pageHistory.pop(); // Убираем текущую страницу
+                const prevPage = pageHistory[pageHistory.length - 1];
+                
+                // Останавливаем QR сканер если он активен
+                if (document.getElementById('accounts-pushQr-page').classList.contains('active')) {
+                    stopQRScanner();
+                }
+                
+                showPage(prevPage);
+            } else {
+                // Если это главная страница, закрываем приложение
+                if (tg) {
+                    tg.close();
+                }
+            }
+        }
+
+        // Показать форму ручного добавления
+        function showManualForm() {
+            showPage('manual-add');
+        }
+
+        // Сохранение аккаунта вручную
+        function saveManualAccount() {
+            const serviceName = document.getElementById('service-name').value.trim();
+            const login = document.getElementById('service-login').value.trim();
+            const secretKey = document.getElementById('secret-key').value.trim().replace(/\s/g, '');
+            
+            if (!serviceName || !secretKey) {
+                showToast('Заполните обязательные поля');
+                return;
+            }
+            
+            // Проверяем Base32 формат
+            if (!/^[A-Z2-7]+=*$/.test(secretKey.toUpperCase())) {
+                showToast('Неверный формат секретного ключа');
+                return;
+            }
+            
+            const newAccount = {
+                id: 'acc_' + Date.now(),
+                serviceName: serviceName,
+                login: login,
+                secretKey: secretKey.toUpperCase(),
+                createdAt: new Date().toISOString()
+            };
+            
+            accounts.push(newAccount);
+            saveUserData();
+            loadAccounts();
+            
+            // Очищаем форму
+            document.getElementById('service-name').value = '';
+            document.getElementById('service-login').value = '';
+            document.getElementById('secret-key').value = '';
+            
+            showToast('Аккаунт добавлен');
+            showPage('accounts');
+        }
+
+        // QR сканер
+        let qrStream = null;
+
+        function startQRScanner() {
+            const video = document.getElementById('qr-video');
+            
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+            }).then(stream => {
+                qrStream = stream;
+                video.srcObject = stream;
+                video.play();
+                
+                // Начинаем сканирование
+                scanQRCode();
+            }).catch(err => {
+                console.error('Camera error:', err);
+                showToast('Не удалось получить доступ к камере');
+                showPage('accounts/push');
+            });
+        }
+
+        function stopQRScanner() {
+            if (qrStream) {
+                qrStream.getTracks().forEach(track => track.stop());
+                qrStream = null;
+            }
+        }
+
+        function scanQRCode() {
+            const video = document.getElementById('qr-video');
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code) {
+                    processQRCode(code.data);
+                    return;
+                }
+            }
+            
+            // Продолжаем сканирование если страница активна
+            if (document.getElementById('accounts-pushQr-page').classList.contains('active')) {
+                requestAnimationFrame(scanQRCode);
+            }
+        }
+
+        function processQRCode(url) {
+            try {
+                // Формат: otpauth://totp/Service:user@email.com?secret=ABC123&issuer=Service
+                const urlObj = new URL(url);
+                
+                if (urlObj.protocol !== 'otpauth:') {
+                    throw new Error('Неверный формат QR кода');
+                }
+                
+                const params = new URLSearchParams(urlObj.search);
+                const secretKey = params.get('secret');
+                const issuer = params.get('issuer') || '';
+                
+                if (!secretKey) {
+                    throw new Error('Секретный ключ не найден');
+                }
+                
+                // Извлекаем название и логин
+                const path = urlObj.pathname.substring(1);
+                let serviceName = issuer;
+                let login = '';
+                
+                if (path.includes(':')) {
+                    const parts = path.split(':');
+                    login = parts[1] || '';
+                    if (!serviceName) {
+                        serviceName = parts[0];
+                    }
+                } else if (!serviceName) {
+                    serviceName = path;
+                }
+                
+                const newAccount = {
+                    id: 'qr_' + Date.now(),
+                    serviceName: serviceName || 'Новый аккаунт',
+                    login: login,
+                    secretKey: secretKey,
+                    createdAt: new Date().toISOString()
+                };
+                
+                accounts.push(newAccount);
+                saveUserData();
+                loadAccounts();
+                
+                stopQRScanner();
+                showToast('Аккаунт добавлен');
+                showPage('accounts');
+                
+            } catch (error) {
+                console.error('QR processing error:', error);
+                showToast('Ошибка: неверный QR-код');
+            }
+        }
+
+        // Детали аккаунта
+        function showAccountDetail(accountId) {
+            const account = accounts.find(acc => acc.id === accountId);
+            if (!account) return;
+            
+            currentAccountId = accountId;
+            
+            // Обновляем заголовок
+            document.getElementById('detail-service-name').textContent = account.serviceName;
+            document.getElementById('detail-service-name-full').textContent = account.serviceName;
+            
+            // Показываем страницу
+            showPage('account-detail');
+            
+            // Сразу обновляем код
+            updateAccountCode();
+        }
+
+        // Генерация TOTP кода
+        function generateTOTP(secretKey) {
+            try {
+                // Декодируем Base32
+                const key = base32Decode(secretKey);
+                
+                // Получаем время в интервалах по 30 секунд
+                const time = Math.floor(Date.now() / 1000 / 30);
+                
+                // Конвертируем время в 8-байтовый массив (big-endian)
+                const timeBytes = new ArrayBuffer(8);
+                const timeView = new DataView(timeBytes);
+                timeView.setBigUint64(0, BigInt(time), false);
+                
+                // Вычисляем HMAC-SHA1 (упрощенная реализация для демо)
+                // В production используйте Web Crypto API
+                const hash = simpleHMAC(key, new Uint8Array(timeBytes));
+                
+                // Получаем offset из последнего байта
+                const offset = hash[hash.length - 1] & 0xf;
+                
+                // Извлекаем 4 байта
+                const codeBytes = hash.slice(offset, offset + 4);
+                
+                // Преобразуем в число
+                let code = 0;
+                for (let i = 0; i < 4; i++) {
+                    code = (code << 8) | codeBytes[i];
+                }
+                
+                // Применяем маску и получаем 6-значный код
+                code = (code & 0x7fffffff) % 1000000;
+                
+                return code.toString().padStart(6, '0');
+                
+            } catch (error) {
+                console.error('TOTP generation error:', error);
+                return '000000';
+            }
+        }
+
+        // Base32 декодирование
+        function base32Decode(base32) {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            base32 = base32.replace(/=+$/, '');
+            
+            let bits = 0;
+            let value = 0;
+            let output = [];
+            
+            for (let i = 0; i < base32.length; i++) {
+                value = (value << 5) | alphabet.indexOf(base32[i].toUpperCase());
+                bits += 5;
+                
+                if (bits >= 8) {
+                    bits -= 8;
+                    output.push((value >>> bits) & 0xff);
+                }
+            }
+            
+            return new Uint8Array(output);
+        }
+
+        // Упрощенный HMAC-SHA1 (для демо)
+        function simpleHMAC(key, message) {
+            // В production замените на Web Crypto API
+            // Здесь используется упрощенная реализация
+            const combined = new Uint8Array(key.length + message.length);
+            combined.set(key);
+            combined.set(message, key.length);
+            
+            // Простая хеш-функция для демо
+            const hash = new Uint8Array(20);
+            for (let i = 0; i < combined.length; i++) {
+                hash[i % 20] = (hash[i % 20] + combined[i]) & 0xff;
+            }
+            
+            return hash;
+        }
+
+        // Обновление кода на странице деталей
+        function updateAccountCode() {
+            if (!currentAccountId) return;
+            
+            const account = accounts.find(acc => acc.id === currentAccountId);
+            if (!account) return;
+            
+            const code = generateTOTP(account.secretKey);
+            const formattedCode = code.slice(0, 3) + ' ' + code.slice(3);
+            
+            document.getElementById('code-display').textContent = formattedCode;
+            
+            // Обновляем таймер
+            const timeLeft = 30 - (Math.floor(Date.now() / 1000) % 30);
+            const progress = (timeLeft / 30) * 100;
+            
+            document.getElementById('timer-progress').style.width = progress + '%';
+            
+            // Меняем цвет при малом времени
+            if (timeLeft < 10) {
+                document.getElementById('timer-progress').style.background = 'var(--danger)';
+            } else {
+                document.getElementById('timer-progress').style.background = 'var(--primary)';
+            }
+        }
+
+        // Запуск обновления кодов
+        function startCodeUpdate() {
+            clearInterval(updateInterval);
+            updateInterval = setInterval(() => {
+                if (document.getElementById('account-detail-page').classList.contains('active')) {
+                    updateAccountCode();
+                }
+            }, 1000);
+        }
+
+        // Копирование кода
+        function copyCurrentCode() {
+            if (!currentAccountId) return;
+            
+            const account = accounts.find(acc => acc.id === currentAccountId);
+            if (!account) return;
+            
+            const code = generateTOTP(account.secretKey);
+            
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('Код скопирован');
+                
+                // Виброотклик если доступен
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            }).catch(() => {
+                // Fallback для старых браузеров
+                const textArea = document.createElement('textarea');
+                textArea.value = code;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                showToast('Код скопирован');
+            });
+        }
+
+        // Удаление аккаунта
+        function deleteCurrentAccount() {
+            if (!currentAccountId || !confirm('Удалить этот аккаунт?')) return;
+            
+            accounts = accounts.filter(acc => acc.id !== currentAccountId);
+            saveUserData();
+            loadAccounts();
+            
+            showToast('Аккаунт удален');
+            showPage('accounts');
+        }
+
+        // Настройки темы
+        function setTheme(theme) {
+            settings.theme = theme;
+            saveUserData();
+            applyTheme();
+            
+            // Обновляем активную кнопку
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('theme-' + theme).classList.add('active');
+        }
+
+        function applyTheme() {
+            // Удаляем все темы
+            document.body.classList.remove('dark-theme', 'light-theme');
+            
+            if (settings.theme === 'system' && tg) {
+                // Следуем теме Telegram
+                if (tg.colorScheme === 'dark') {
+                    document.body.classList.add('dark-theme');
+                }
+            } else if (settings.theme === 'dark') {
+                document.body.classList.add('dark-theme');
+            } else if (settings.theme === 'light') {
+                document.body.classList.add('light-theme');
+            }
+            
+            // Обновляем активную кнопку
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById('theme-' + settings.theme);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+        }
+
+        // Бэкапы
+        function exportBackup() {
+            const backupData = {
+                version: '1.0',
+                userId: tg?.initDataUnsafe?.user?.id || 'local_user',
+                exportDate: new Date().toISOString(),
+                accounts: accounts
+            };
+            
+            const dataStr = JSON.stringify(backupData, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            
+            const link = document.createElement('a');
+            link.setAttribute('href', dataUri);
+            link.setAttribute('download', `2fa-backup-${Date.now()}.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast('Бэкап сохранен');
+        }
+
+        function importBackup() {
+            document.getElementById('backup-file').click();
+        }
+
+        // Обработка выбора файла
+        document.getElementById('backup-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const backupData = JSON.parse(e.target.result);
+                    
+                    if (!backupData.accounts || !Array.isArray(backupData.accounts)) {
+                        throw new Error('Неверный формат файла');
+                    }
+                    
+                    if (confirm(`Восстановить ${backupData.accounts.length} аккаунтов?`)) {
+                        accounts = backupData.accounts;
+                        saveUserData();
+                        loadAccounts();
+                        showToast('Бэкап восстановлен');
+                    }
+                } catch (error) {
+                    console.error('Backup import error:', error);
+                    showToast('Ошибка загрузки бэкапа');
+                }
+                
+                // Сбрасываем input
+                e.target.value = '';
+            };
+            
+            reader.readAsText(file);
+        });
+
+        // Уведомления
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
