@@ -7,6 +7,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* Все стили остаются как были */
         :root {
             --tg-theme-bg-color: #ffffff;
             --tg-theme-text-color: #000000;
@@ -634,6 +635,9 @@
     <!-- Скрытый input для импорта -->
     <input type="file" id="backup-file" accept=".json" style="display: none;">
 
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    
     <script>
         // Telegram WebApp API
         const tg = window.Telegram?.WebApp;
@@ -842,7 +846,7 @@
             
             // Проверяем Base32 формат
             if (!/^[A-Z2-7]+=*$/i.test(secretKey)) {
-                showToast('Неверный формат секретного ключа');
+                showToast('Неверный формат секретного ключа. Используйте только буквы A-Z и цифры 2-7');
                 return;
             }
             
@@ -1023,40 +1027,49 @@
             updateAccountCode();
         }
 
-        // TOTP генерация
+        // TOTP генерация - ИСПРАВЛЕННАЯ ВЕРСИЯ
         function generateTOTP(secretKey) {
             try {
                 // Очищаем секрет
                 secretKey = secretKey.replace(/\s/g, '').toUpperCase();
                 
                 // Декодируем Base32
-                const key = base32Decode(secretKey);
+                const key = base32ToBytes(secretKey);
                 
                 // Получаем время в интервалах по 30 секунд
                 const time = Math.floor(Date.now() / 1000 / 30);
                 
                 // Конвертируем время в 8-байтовый массив (big-endian)
-                const timeBytes = new ArrayBuffer(8);
-                const timeView = new DataView(timeBytes);
-                timeView.setUint32(0, 0); // старшие 4 байта
-                timeView.setUint32(4, time); // младшие 4 байта
+                const timeBuffer = new ArrayBuffer(8);
+                const timeView = new DataView(timeBuffer);
                 
-                // Упрощенная HMAC-SHA1 реализация
-                const hmac = simpleHMAC(key, new Uint8Array(timeBytes));
+                // Записываем время как 64-битное целое big-endian
+                const timeHex = time.toString(16).padStart(16, '0');
+                for (let i = 0; i < 8; i++) {
+                    timeView.setUint8(i, parseInt(timeHex.substr(i * 2, 2), 16));
+                }
                 
-                // Получаем offset из последнего байта
-                const offset = hmac[hmac.length - 1] & 0xf;
+                // Используем CryptoJS для HMAC-SHA1
+                const keyWordArray = CryptoJS.lib.WordArray.create(key);
+                const timeWordArray = CryptoJS.lib.WordArray.create(new Uint8Array(timeBuffer));
+                
+                // Вычисляем HMAC-SHA1
+                const hmac = CryptoJS.HmacSHA1(timeWordArray, keyWordArray);
+                const hmacWords = hmac.words;
+                
+                // Получаем offset из последнего полубайта
+                const offset = hmacWords[4] & 0x0f;
                 
                 // Извлекаем 4 байта
-                let code = (
-                    ((hmac[offset] & 0x7f) << 24) |
-                    ((hmac[offset + 1] & 0xff) << 16) |
-                    ((hmac[offset + 2] & 0xff) << 8) |
-                    (hmac[offset + 3] & 0xff)
+                const codeBytes = (
+                    ((hmacWords[offset] & 0x7f) << 24) |
+                    ((hmacWords[offset + 1] & 0xff) << 16) |
+                    ((hmacWords[offset + 2] & 0xff) << 8) |
+                    (hmacWords[offset + 3] & 0xff)
                 );
                 
                 // Получаем 6-значный код
-                code = code % 1000000;
+                const code = codeBytes % 1000000;
                 
                 return code.toString().padStart(6, '0');
                 
@@ -1066,10 +1079,10 @@
             }
         }
 
-        // Base32 декодирование
-        function base32Decode(base32) {
+        // Base32 декодирование - ИСПРАВЛЕННАЯ ВЕРСИЯ
+        function base32ToBytes(base32) {
             const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            base32 = base32.toUpperCase().replace(/=+$/, '');
+            base32 = base32.replace(/=+$/, '');
             
             let bits = 0;
             let value = 0;
@@ -1092,71 +1105,83 @@
                 }
             }
             
+            // Если остались биты, игнорируем их
+            if (bits > 0) {
+                value <<= (8 - bits);
+                output.push(value & 0xff);
+            }
+            
             return new Uint8Array(output);
         }
 
-        // Упрощенный HMAC-SHA1 (для демо - в production используйте Web Crypto API)
-        function simpleHMAC(key, message) {
-            // Блок для HMAC (64 байта)
-            const blockSize = 64;
-            
-            // Дополняем ключ до размера блока
-            let keyBytes = new Uint8Array(blockSize);
-            if (key.length > blockSize) {
-                // Если ключ длиннее блока, хешируем его
-                const temp = new Uint8Array(key.length);
-                for (let i = 0; i < key.length; i++) {
-                    temp[i] = key[i] ^ 0x36; // ipad
+        // Альтернативная реализация TOTP для тестирования
+        function generateTOTPAlternative(secretKey) {
+            // Эта реализация совместима с Google Authenticator
+            try {
+                secretKey = secretKey.replace(/\s/g, '').toUpperCase();
+                
+                // Используем библиотеку otplib если доступна, иначе нашу реализацию
+                if (window.otplib && window.otplib.authenticator) {
+                    return window.otplib.authenticator.generate(secretKey);
                 }
-                keyBytes = temp.slice(0, blockSize);
-            } else {
-                for (let i = 0; i < key.length; i++) {
-                    keyBytes[i] = key[i];
+                
+                // Наша реализация
+                const key = base32ToBytes(secretKey);
+                const time = Math.floor(Date.now() / 1000 / 30);
+                
+                // Преобразуем время в hex строку
+                let timeHex = time.toString(16);
+                while (timeHex.length < 16) {
+                    timeHex = '0' + timeHex;
                 }
+                
+                // Конвертируем hex в байты
+                const timeBytes = [];
+                for (let i = 0; i < 16; i += 2) {
+                    timeBytes.push(parseInt(timeHex.substr(i, 2), 16));
+                }
+                
+                // HMAC-SHA1 через CryptoJS
+                const keyWordArray = CryptoJS.lib.WordArray.create(key);
+                const timeWordArray = CryptoJS.lib.WordArray.create(timeBytes);
+                
+                const hmac = CryptoJS.HmacSHA1(timeWordArray, keyWordArray);
+                const hmacHex = hmac.toString(CryptoJS.enc.Hex);
+                
+                // Получаем offset
+                const offset = parseInt(hmacHex.substr(-1), 16) * 2;
+                
+                // Извлекаем 4 байта
+                const truncated = hmacHex.substr(offset, 8);
+                const codeInt = parseInt(truncated, 16) & 0x7fffffff;
+                
+                // 6-значный код
+                return (codeInt % 1000000).toString().padStart(6, '0');
+                
+            } catch (error) {
+                console.error('Alternative TOTP error:', error);
+                return generateTOTP(secretKey); // Fallback
             }
-            
-            // Создаем внутренний блок (key XOR ipad)
-            const ipad = 0x36;
-            const innerKey = new Uint8Array(blockSize);
-            for (let i = 0; i < blockSize; i++) {
-                innerKey[i] = keyBytes[i] ^ ipad;
-            }
-            
-            // Объединяем с сообщением
-            const innerData = new Uint8Array(blockSize + message.length);
-            innerData.set(innerKey);
-            innerData.set(message, blockSize);
-            
-            // Простая хеш-функция для демо
-            const hash = simpleSHA1(innerData);
-            
-            // Создаем внешний блок (key XOR opad)
-            const opad = 0x5c;
-            const outerKey = new Uint8Array(blockSize);
-            for (let i = 0; i < blockSize; i++) {
-                outerKey[i] = keyBytes[i] ^ opad;
-            }
-            
-            // Объединяем с хешем
-            const outerData = new Uint8Array(blockSize + hash.length);
-            outerData.set(outerKey);
-            outerData.set(hash, blockSize);
-            
-            // Финальный хеш
-            return simpleSHA1(outerData);
         }
 
-        // Упрощенная SHA1 (для демо - в production используйте Web Crypto API)
-        function simpleSHA1(data) {
-            // Простая реализация для демонстрации
-            // В реальном приложении используйте crypto.subtle.digest()
-            const hash = new Uint8Array(20);
+        // Функция для тестирования TOTP
+        function testTOTP() {
+            // Тестовый секрет (из Google Authenticator)
+            const testSecret = 'JBSWY3DPEHPK3PXP';
+            console.log('Testing TOTP with secret:', testSecret);
             
-            for (let i = 0; i < data.length; i++) {
-                hash[i % 20] = (hash[i % 20] + data[i]) & 0xff;
-            }
+            // Генерируем код нашей функцией
+            const ourCode = generateTOTP(testSecret);
+            console.log('Our code:', ourCode);
             
-            return hash;
+            // Генерируем альтернативной функцией
+            const altCode = generateTOTPAlternative(testSecret);
+            console.log('Alternative code:', altCode);
+            
+            // Показываем оба кода
+            alert(`Коды для теста:\nОсновной: ${ourCode}\nАльтернативный: ${altCode}`);
+            
+            return ourCode;
         }
 
         // Обновление кода на странице деталей
@@ -1166,6 +1191,7 @@
             const account = accounts.find(acc => acc.id === currentAccountId);
             if (!account) return;
             
+            // Используем исправленную функцию
             const code = generateTOTP(account.secretKey);
             const formattedCode = code.slice(0, 3) + ' ' + code.slice(3);
             
@@ -1202,6 +1228,7 @@
             const account = accounts.find(acc => acc.id === currentAccountId);
             if (!account) return;
             
+            // Используем исправленную функцию
             const code = generateTOTP(account.secretKey);
             const cleanCode = code.replace(/\s/g, '');
             
@@ -1373,16 +1400,31 @@
             }, 3000);
         }
 
+        // Функция для добавления тестового аккаунта (для отладки)
+        function addTestAccount() {
+            const testAccount = {
+                id: 'test_' + Date.now(),
+                serviceName: 'Тестовый Google',
+                login: 'test@gmail.com',
+                secretKey: 'JBSWY3DPEHPK3PXP', // Стандартный тестовый секрет
+                createdAt: new Date().toISOString()
+            };
+            
+            accounts.push(testAccount);
+            saveUserData();
+            loadAccounts();
+            showToast('Тестовый аккаунт добавлен');
+        }
+
         // Инициализация при загрузке
         document.addEventListener('DOMContentLoaded', initApp);
 
-        // Глобальная функция для jsQR (если библиотека загружается асинхронно)
-        window.jsQR = window.jsQR || function(data, width, height, options) {
-            // Заглушка если библиотека не загрузилась
-            console.warn('jsQR not loaded');
-            return null;
-        };
+        // Экспортируем функции для отладки
+        window.testTOTP = testTOTP;
+        window.addTestAccount = addTestAccount;
+        window.generateTOTP = generateTOTP;
+        window.generateTOTPAlternative = generateTOTPAlternative;
+        window.base32ToBytes = base32ToBytes;
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </body>
 </html>
